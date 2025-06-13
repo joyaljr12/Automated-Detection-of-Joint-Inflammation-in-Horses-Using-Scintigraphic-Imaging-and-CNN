@@ -11,15 +11,17 @@ ftu_dir = os.path.join(dataset_path, "FTU")
 nonftu_dir = os.path.join(dataset_path, "NonFTU")
 
 # Load test data
-_, test_loader = create_dataloaders(ftu_dir, nonftu_dir, batch_size=64)
+_, _, test_loader = create_dataloaders(ftu_dir, nonftu_dir, batch_size=64)
 
 # Set device (GPU or CPU)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Load trained model
 model = FTUCNN().to(device)  # Ensure model is initialized correctly
-model.load_state_dict(torch.load(r"D:\Master Thesis\Automated Detection of Joint Inflammation in Horses Using Scintigraphic Imaging and CNNs\FTU & Non FTU classification\Models\model_FTU_nonftu.pth"))
+model.load_state_dict(torch.load(r"D:\Master Thesis\Automated Detection of Joint Inflammation in Horses Using Scintigraphic Imaging and CNNs\FTU vs Non-FTU Classification\model_FTU_nonftu.pth"))
 
+#Loss function
+loss_function = nn.CrossEntropyLoss()
 
 # Validation
 def test_model():
@@ -27,6 +29,7 @@ def test_model():
     start = time.time()
     total = 0
     correct = 0
+    running_loss = 0.0
     all_labels = []
     all_predictions = []
 
@@ -34,6 +37,8 @@ def test_model():
         for images, labels in test_loader:
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
+            loss = loss_function(outputs, labels)
+            running_loss += loss.item()
             _, predicted = torch.max(outputs, 1)  # Get predicted class
 
             total += labels.size(0)
@@ -42,14 +47,16 @@ def test_model():
             all_predictions.extend(predicted.cpu().numpy())
 
     accuracy = 100 * correct / total
+    avg_test_loss = running_loss/len(test_loader)
     end = time.time()
     
-    print(f'Validation Accuracy: {accuracy:.2f}%')
+    print(f'Test Accuracy: {accuracy:.2f}%')
+    print(f"Average Test Loss: {avg_test_loss:.4f}")
     print(f'Execution Time: {end - start:.2f} seconds')
 
-    return all_labels, all_predictions
+    return all_labels, all_predictions, avg_test_loss
 
 # Run the test function
 if __name__ == "__main__":
-    all_labels, all_predictions = test_model()
+    all_labels, all_predictions, test_loss = test_model()
 

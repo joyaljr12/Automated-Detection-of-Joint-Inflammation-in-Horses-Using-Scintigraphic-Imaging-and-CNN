@@ -15,12 +15,22 @@ def evaluate_model():
     # Generate confusion matrix
     conf_matrix = confusion_matrix(all_labels, all_predictions, labels= np.arange(num_classes))
 
+    #compute sensitivity and specificity
+    TN, FP, FN, TP = conf_matrix.ravel()
+
+    sensitivity = TP / (TP + FN) if (TP + FN) > 0 else 0
+    specificity = TN / (TN + FP) if (TN + FP) > 0 else 0 
+
     # Generate classification report
     class_report = classification_report(all_labels, all_predictions, target_names=class_names)
 
     print("Classification Report:\n", class_report)
 
-    return conf_matrix, class_report
+    # Print sensitivity and specificity
+    print(f"✅ Sensitivity (Recall of FTU): {sensitivity:.4f}")
+    print(f"✅ Specificity (Recall of Non-FTU): {specificity:.4f}")
+
+    return conf_matrix, class_report, sensitivity, specificity
 
 def plot_confusion_matrix(conf_matrix):
 
@@ -35,6 +45,6 @@ def plot_confusion_matrix(conf_matrix):
 
 # Run evaluation if script is executed directly
 if __name__ == '__main__':
-    conf_matrix, class_report = evaluate_model()
+    conf_matrix, class_report, sensitivity, specificity  = evaluate_model()
     plot_confusion_matrix(conf_matrix)
 

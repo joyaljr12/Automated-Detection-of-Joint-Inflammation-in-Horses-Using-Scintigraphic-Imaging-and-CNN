@@ -3,10 +3,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import time
-from Model import FTUCNN
 from Dataset import create_dataloaders
+from Model import FTUCNN
+import matplotlib.pyplot as plt
 
-# Set device to GPU if available, else CPU
+# Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Set dataset path
@@ -14,73 +15,87 @@ dataset_path = r"D:\Master Thesis\Automated Detection of Joint Inflammation in H
 ftu_dir = os.path.join(dataset_path, "FTU")
 nonftu_dir = os.path.join(dataset_path, "NonFTU")
 
-# Load training data
-train_loader,_ = create_dataloaders(ftu_dir, nonftu_dir, batch_size=64) 
+# Load data with new split
+train_loader, val_loader, _ = create_dataloaders(ftu_dir, nonftu_dir, batch_size=64)
 
 # Initialize model
 model = FTUCNN().to(device)
 
-# === Compute class weights from train_loader ===
+# Class weighting
 all_labels = []
 for _, labels in train_loader:
     all_labels.extend(labels.tolist())
-
 num_ftu = sum(1 for l in all_labels if l == 1)
 num_nonftu = sum(1 for l in all_labels if l == 0)
-
-# Penalize the majority class less
 class_weights = torch.tensor([1.0 * num_ftu / num_nonftu, 1.0]).to(device)
 loss_function = nn.CrossEntropyLoss(weight=class_weights)
 
-# Define optimizer (AdamW optimizer with learning rate 0.001 and weight decay for regularization)
+# Optimizer
 optimizer = optim.AdamW(model.parameters(), lr=0.0001, weight_decay=0.0001)
 
-# Training loop
+# === Training function with validation ===
 def train_model(epochs=10):
     model.train()
-    start = time.time()
+    epoch_losses = []
 
     for epoch in range(epochs):
-        running_loss = 0.0
-        for batch_num, (images, labels) in enumerate(train_loader):
-            images = images.to(device)
-            labels = labels.to(device)
+        running_loss = 0
+        correct = 0
+        total = 0
 
-            # forward pass
+        for images, labels in train_loader:
+            images, labels = images.to(device), labels.to(device)
+
+            optimizer.zero_grad()
             outputs = model(images)
             loss = loss_function(outputs, labels)
-
-            # Zero the gradients to prevent accumulation
-            optimizer.zero_grad()
-
-            # Backward pass
             loss.backward()
-
-            # Optimization step: update model parameters
             optimizer.step()
 
-            # Print loss for every 10 batches
-            if (batch_num + 1) % 25 == 0:
-                print(f'Batch:{batch_num+1}, Epoch :{epoch+1}, Loss: {loss.item():0.2f}')
+            running_loss += loss.item()
+            _, preds = torch.max(outputs, 1)
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
 
-            running_loss += loss.item() # Accumulate total loss for the epoch
-        
-        # Compute and print average loss for the epoch
-        epoch_loss = running_loss / len(train_loader)
-        print(f"Epoch {epoch+1}/{epochs}, Avg loss: {epoch_loss:.4f}")
+        val_acc = evaluate_accuracy(val_loader)
+        epoch_loss = running_loss/ len(train_loader)
+        epoch_losses.append(epoch_loss)
 
-    end = time.time() # End timing the training process
-    print(f'Training completed in {end - start:.2f} seconds')
+        print(f"Epoch {epoch+1}/{epochs} - Loss: {epoch_loss:.4f} - Train Acc: {100*correct/total:.2f}% - Val Acc: {val_acc:.2f}%")
 
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    model_dir = os.path.join(project_root, "Models")
-    os.makedirs(model_dir, exist_ok=True)
+     # Plot loss
+    plt.figure()
+    plt.plot(range(1, epochs+1), epoch_losses, marker='o')
+    plt.title("Training Loss per Epoch")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
-    # Save trained model
-    model_path = os.path.join(model_dir, "model_FTU_nonftu.pth")
+    save_model(model)
+
+# === Validation Accuracy ===
+def evaluate_accuracy(loader):
+    model.eval()
+    correct, total = 0, 0
+    with torch.no_grad():
+        for images, labels in loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            _, preds = torch.max(outputs, 1)
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+    model.train()
+    return 100 * correct / total
+
+# === Save model ===
+def save_model(model):
+    current_dir = os.path.dirname(os.path.abspath(__file__))  
+    model_path = os.path.join(current_dir, "model_FTU_nonftu_2.pth")
     torch.save(model.state_dict(), model_path)
-    print("Model saved successfully!")
+    print(f"✅ Model saved to {model_path}")
 
-# Run training if script is executed directly
+# === Main ===
 if __name__ == "__main__":
     train_model()
